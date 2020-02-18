@@ -26,12 +26,22 @@ $ ./jenkins --job [jenkins-build-plan]/[source-branch] -f
 
 So much easier!
 
+When run for the first time, some questions will be asked with the answers stored in `~/.jenkinsrc`.
+This file holds the following settings:
+
+- `jenkins_api_token`
+- `jenkins_cli_jar_path`
+- `jenkins_url`
+- `jenkins_user`
+
 > ☝️ Your Jenkins API Token can be created in your Jenkins instance at:  
 > Jenkins > Your Account > Configure > API Token > Add new token
 
 ## Usage
 
-> jenkins --job jenkins-job/source-branch [--build N][--follow | --display-last n]
+```shell
+jenkins --job jenkins-job/source-branch [--build N] [--follow | --display-last n]
+```
 
 ```shell
 $ ./jenkins --help
