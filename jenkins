@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1090,SC2059
+# SC1090 - Can't follow non-constant source. Use a directive to specify location. - https://github.com/koalaman/shellcheck/wiki/SC1090
+# SC2059 - Don't use variables in the printf format string. Use printf "..%s.." "$autopwn". - https://github.com/koalaman/shellcheck/wiki/SC2059
+
+set -o errexit   # Exit immediately if a pipeline returns a non-zero status (set -e)
+
+# colors and formatting
+reset=$(tput sgr0)
+red=$(tput setaf 1)
+config="  %20s: %-s\n"
+header="\n%s\n"
+indent="  %s\n"
+options="  %4s | %-16s %-s\n"
+
+# default configs
+display_last_lines=false
+display_lines=-1
+follow=false
+jenkins_build=lastBuild
+jenkins_url=https://cnn-devops-jenkins.cnnio.net
+
+trap 'cleanup' ERR EXIT
+
+cleanup () {
+  # reset all colors and formats
+  echo "${reset}"
+} 
+
+display_usage () {
+  printf "${header}" "Usage:"
+  printf "${indent}" "jenkins --job jenkins-job/source-branch [--build N] [--follow | --display-last N]"
+  
+  printf "${header}" "Required Options:"
+  printf "${options}" "-j" "--job" "Job format is buildplan/branch"
+
+  printf "${header}" "Misc Options:"
+  printf "${options}" "-b" "--build" "Jenkins build number; defaults to lastBuild"
+  printf "${options}" "-f" "--follow" "If the build is in progress, append console output as it comes"
+  printf "${options}\n" "-n" "--display-last" "Display the last N lines"
+
+  printf "${options}" "-h" "--help" "Show help and version information"
+  printf "${options}" "-v" "--version" "Show help and version information"
+
+  printf "${header}" "Examples viewing the results of build plan \`autopwn\` on branch \`master\`:"
+  printf "${indent}" "jenkins --job autopwn/master"
+  printf "${indent}" "jenkins --job autopwn/master --follow"
+  printf "${indent}" "jenkins --job autopwn/master --display-last 10"
+  printf "${indent}" "jenkins --job autopwn/master --build 3 --follow"
+  printf "${indent}" "jenkins --job autopwn/master --build 3 --display-last 10"
+
+  echo; echo "v0.0.1"
+}
+
+check_requirements () {
+  local exitcode=0
+  local requirements=( java )
+  
+  for requirement in ${requirements[*]}; do
+    [[ "$(command -v "${requirement}")" ]] || { echo "${red}${requirement} not found!"; exitcode=1; }
+  done
+  
+  if [ -f "${HOME}/.jenkinsrc" ] ; then
+    . "${HOME}/.jenkinsrc"
+  else
+    exitcode=1;
+
+    echo; echo "${HOME}/.jenkinsrc not found! Let's create it!"
+    
+    echo; echo "Where is the jenkins-cli.jar file? (download from the Jenkins server)"
+    read -r jenkins_cli_jar_path
+    
+    echo; echo "What is your jenkins username? (should be your work email)"
+    read -r jenkins_user
+
+    echo; echo "What is your Jenkins api token? (jenkins -> user -> configure -> add new token)"
+    read -r jenkins_api_token
+
+    {
+      echo "jenkins_api_token=${jenkins_api_token}"
+      echo "jenkins_cli_jar_path=${jenkins_cli_jar_path}"
+      echo "jenkins_url=${jenkins_url}"
+      echo "jenkins_user=${jenkins_user}"
+    } >> "${HOME}/.jenkinsrc"
+
+    echo; echo "All Set! Please run again with a full config."
+  fi
+
+  return "${exitcode}"   # equivalent to exit w/ set -o errexit above
+}
+
+parse_arguments () {
+  if [ $# -gt 0 ]; then
+    while true; do
+      case "${1}" in
+        -j | --job) jenkins_job=${2}; shift 2 ;;
+
+        -b | --build) jenkins_build=${2}; shift 2 ;;
+        -f | --follow) follow=true; shift 1 ;;
+        -n | --display-last) display_last=${2}; display_last_lines=true; shift 2 ;;
+
+        -h | --help) display_usage; exit 0 ;;
+        -v | --version) display_usage; exit 0 ;;
+        *) break ;;
+      esac
+    done
+  else
+    display_usage
+    exit 1;
+  fi
+}
+
+call_jenkins_cli () {
+  local java_cmd="java -jar ${jenkins_cli_jar_path} -s ${jenkins_url} -auth ${jenkins_user}:${jenkins_api_token} console ${jenkins_job} ${jenkins_build}"
+  
+  if [[ "${follow}" == "true" ]]; then
+    java_cmd="${java_cmd} -f"
+  fi
+
+  if [[ "${display_last_lines}" == "true" ]]; then
+    java_cmd="${java_cmd} -n ${display_last}"
+  fi
+
+  $java_cmd
+}
+
+main () {
+  check_requirements
+  parse_arguments "$@"
+
+  if [[ "${jenkins_job}" != "" ]]; then
+    printf "${header}" "Runtime Config"
+    printf "${config}" "Display last lines" "${display_last_lines}"
+    printf "${config}" "Display # of lines" "${display_lines}"
+    printf "${config}" "Follow" "${follow}"
+    printf "${config}" "Jenkins API Token" "${jenkins_api_token:0:7}..."
+    printf "${config}" "Jenkins Build" "${jenkins_build}"
+    printf "${config}" "Jenkins Job" "${jenkins_job}"
+    printf "${config}" "Jenkins URL" "${jenkins_url}"
+    printf "${config}" "Jenkins User" "${jenkins_user}"
+    printf "${config}" "jenkins-cli.jar path" "${jenkins_cli_jar_path}"
+    call_jenkins_cli
+  else
+    printf "${header}" "Missing required config!"
+    display_usage
+    exit 1
+  fi
+}
+
+main "$@"
+
+# history
+# v0.0.1 - initial script
